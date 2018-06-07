@@ -45,7 +45,8 @@ Max30100::Device::Device(i2c_port_t i2c_num, Mode mode,
                             current_pulse_state(PulseState::IDLE),
                             red_current(start_red_current),
                             last_red_current_check(0),
-                            ir_current(ir_current)
+                            ir_current(ir_current),
+                            mtx_result()
 {
     try {
         mean_diff_ir.values.reset(new double[mean_filter_size]);
@@ -182,7 +183,9 @@ void Max30100::Device::update()
 
         //This is my adjusted standard model, so it shows 0.89 as 94% saturation.
         //It is probably far from correct, requires proper empirical calibration.
+        mtx_result.take();
         current_spO2 = 110.0 - 18.0 * ratio_rms;
+        mtx_result.give();
 
         if(!(pulses_detected % rst_spo2_pulse_n)){
             ir_ac_sq_sum = 0;
@@ -309,10 +312,12 @@ bool Max30100::Device::detect_pulse(double sensor_value)
             if(bpm_count < pulse_bpm_sample_size)
                 bpm_count++;
 
+            mtx_result.take();
             current_bpm = bpm_sum / bpm_count;
 
             if(debug)
                 printf("AVg. BPM: %f\n", current_bpm);
+            mtx_result.give();
 
             current_pulse_state = PulseState::TRAC_DOWN;
 
@@ -384,14 +389,19 @@ void Max30100::Device::print_registers()
     }
 }
 
-//@TODO mutex
 double Max30100::Device::get_bpm()
 {
-    return current_bpm;
+    mtx_result.take();
+    double bpm = current_bpm;
+    mtx_result.give();
+    return bpm;
 }
 
 double Max30100::Device::get_spo2()
 {
-    return current_spO2;
+    mtx_result.take();
+    double spo2 = current_spO2;
+    mtx_result.give();
+    return spo2;
 }
 

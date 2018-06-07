@@ -324,6 +324,8 @@ private:
     struct MeanDiff mean_diff_ir;
     std::unique_ptr<double[]> values_bpm;
 
+    FreeRTOS::Semaphore mtx_result;
+
     Current ir_current;
 
     double last_red_current_check;    
