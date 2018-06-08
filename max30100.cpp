@@ -48,6 +48,9 @@ Max30100::Device::Device(i2c_port_t i2c_num, Mode mode,
                             ir_current(ir_current),
                             mtx_result()
 {
+
+    mtx_result = xSemaphoreCreateMutex();
+
     try {
         mean_diff_ir.values.reset(new double[mean_filter_size]);
         values_bpm.reset(new double[mean_filter_size]);
@@ -183,9 +186,9 @@ void Max30100::Device::update()
 
         //This is my adjusted standard model, so it shows 0.89 as 94% saturation.
         //It is probably far from correct, requires proper empirical calibration.
-        mtx_result.take();
+        xSemaphoreTake(mtx_result, portMAX_DELAY);
         current_spO2 = 110.0 - 18.0 * ratio_rms;
-        mtx_result.give();
+        xSemaphoreGive(mtx_result);
 
         if(!(pulses_detected % rst_spo2_pulse_n)){
             ir_ac_sq_sum = 0;
@@ -312,12 +315,12 @@ bool Max30100::Device::detect_pulse(double sensor_value)
             if(bpm_count < pulse_bpm_sample_size)
                 bpm_count++;
 
-            mtx_result.take();
+            xSemaphoreTake(mtx_result, portMAX_DELAY);
             current_bpm = bpm_sum / bpm_count;
 
             if(debug)
                 printf("AVg. BPM: %f\n", current_bpm);
-            mtx_result.give();
+            xSemaphoreGive(mtx_result);
 
             current_pulse_state = PulseState::TRAC_DOWN;
 
@@ -347,9 +350,9 @@ double Max30100::Device::read_temperature()
     }
 
     //@TODO
-    //This can be changed to a while loop, (with interrupt flag!)
-    //there is an interrupt flag for when temperature has been read.
-    FreeRTOS::sleep(100); // Change this!!
+    //This can be changed to a while loop checking the interrupt flag.
+    //There is an interrupt flag for when temperature has been read.
+    vTaskDelay(100/portTICK_PERIOD_MS);
 
     int8_t temp;
     double temp_frac;
@@ -391,17 +394,17 @@ void Max30100::Device::print_registers()
 
 double Max30100::Device::get_bpm()
 {
-    mtx_result.take();
+    xSemaphoreTake(mtx_result, portMAX_DELAY);
     double bpm = current_bpm;
-    mtx_result.give();
+    xSemaphoreGive(mtx_result);
     return bpm;
 }
 
 double Max30100::Device::get_spo2()
 {
-    mtx_result.take();
+    xSemaphoreTake(mtx_result, portMAX_DELAY);
     double spo2 = current_spO2;
-    mtx_result.give();
+    xSemaphoreGive(mtx_result);
     return spo2;
 }
 

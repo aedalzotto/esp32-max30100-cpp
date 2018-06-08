@@ -22,8 +22,10 @@
 #include <memory>
 #include <driver/i2c.h>
 #include <esp_log.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+
 #include "i2c_device.h"
-#include "FreeRTOS.h"
 
 namespace Max30100 {
     class Device;
@@ -324,7 +326,7 @@ private:
     struct MeanDiff mean_diff_ir;
     std::unique_ptr<double[]> values_bpm;
 
-    FreeRTOS::Semaphore mtx_result;
+    SemaphoreHandle_t mtx_result;
 
     Current ir_current;
 
