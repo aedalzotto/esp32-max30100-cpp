@@ -1,0 +1,5 @@
+# Compiled files
+build
+
+# MSVSCode configuration
+.vscode
