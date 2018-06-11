@@ -79,7 +79,6 @@ enum class Max30100::PulseWidth {
  */
 enum class Max30100::Current {
     CURRENT_0MA    = 0x00,
-    CURRENT_0MA    = 0x00,
     CURRENT_4_4MA  = 0x01,
     CURRENT_7_6MA  = 0x02,
     CURRENT_11MA   = 0x03,
@@ -117,9 +116,6 @@ public:
      * @details All parameters are optional.
      * 
      * @param i2c_num is the I2C port of the ESP32 with the MAX30100 is attached to.
-     * @param mode is the working mode of the sensor (HR only or HR+SPO2)
-     * @param sampling_rate is the frequency which samples are taken internally.
-     * @param pulse_width is the led pulse width. 
      * @param ir_current is the current to the IR Led.
      * @param start_red_current is the starting value to Red Led current.
      * @param acceptable_intensity_diff TODO
@@ -130,24 +126,34 @@ public:
      * @param pulse_min_thresh TODO
      * @param pulse_max_thresh TODO
      * @param bpm_sample_size is the heart rate sampling vector size.
-     * @param high_res_mode is to set if high resolution mode or not.
      * @param debug is to set if registers output will be done to serial monitoring.
-     * 
-     * @throw std::bac_alloc Case can't allocate memory for sample buffers.
-     * @throw I2CExcept::CommandFailed Case some i2c communication fail.
      */
-    Device(i2c_port_t i2c_num = I2C_NUM_0, 
-            Mode mode = Mode::SPO2_HR, 
-            SamplingRate sampling_rate = SamplingRate::RATE_100HZ,
-            PulseWidth pulse_width = PulseWidth::WIDTH_1600US_ADC_16,
+    Device(i2c_port_t i2c_num = I2C_NUM_0,
             Current ir_current = Current::CURRENT_50MA,
             Current start_red_current = Current::CURRENT_27_1MA,
             uint32_t acceptable_intensity_diff = 65000,
             uint16_t red_current_adj_ms = 500, uint8_t rst_spo2_pulse_n = 4,
             double alpha = 0.95, uint8_t mean_filter_sz = 15,
             uint16_t pulse_min_thresh = 300, uint16_t pulse_max_thresh = 2000,
-            uint8_t bpm_sample_size = 10, bool high_res_mode = true, 
+            uint8_t bpm_sample_size = 10,
             bool debug = false);
+
+    /**
+     * @brief Device initializer
+     * 
+     * @details Allocate resources that can throw exceptions
+     * 
+     * @param mode is the working mode of the sensor (HR only or HR+SPO2)
+     * @param sampling_rate is the frequency which samples are taken internally.
+     * @param pulse_width is the led pulse width. 
+     * @param high_res_mode is to set if high resolution mode or not.
+     * 
+     * @throw std::bac_alloc Case can't allocate memory for sample buffers.
+     * @throw I2CExcept::CommandFailed Case some i2c communication fail.
+     */
+    void init(Mode mode = Mode::SPO2_HR, 
+            SamplingRate sampling_rate = SamplingRate::RATE_100HZ,
+            PulseWidth pulse_width = PulseWidth::WIDTH_1600US_ADC_16,bool high_res_mode = true);
 
     /**
      * @brief Reads the MAX30100 registers and update the object.
@@ -221,9 +227,26 @@ public:
      */
     void set_sampling_rate(SamplingRate rate = SamplingRate::RATE_100HZ);
 
+    /**
+     * @brief Get the last bpm value.
+     * 
+     * @return current_bpm
+     */
     double get_bpm();
 
+    /**
+     * @brief Get the last spo2 value.
+     * 
+     * @return current_spo2
+     */
     double get_spo2(); 
+
+    /**
+     * @brief Get the device tag for debug.
+     * 
+     * @return *TAG
+     */
+    const char* get_tag();
 
 private:
     /**
@@ -324,14 +347,14 @@ private:
     bool debug;
     PulseState current_pulse_state;
 
+    Current ir_current;
+    double last_red_current_check;
+
     struct MeanDiff mean_diff_ir;
     std::unique_ptr<double[]> values_bpm;
 
     SemaphoreHandle_t mtx_result;
 
-    Current ir_current;
-
-    double last_red_current_check;    
     double current_bpm;
     double bpm_sum;
     uint8_t bpm_count;

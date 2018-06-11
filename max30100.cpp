@@ -40,18 +40,18 @@ const uint8_t Max30100::Device::SPO2_HI_RES_EN = (1 << 6);
 
 const char *Max30100::Device::TAG = "Max30100";
 
-Max30100::Device::Device(i2c_port_t i2c_num, Mode mode,
-                            SamplingRate sampling_rate, PulseWidth pulse_width,
-                            Current ir_current, Current start_red_current,
+Max30100::Device::Device(i2c_port_t i2c_num, Current ir_current, 
+                            Current start_red_current,
                             uint32_t acceptable_intensity_diff,
                             uint16_t red_current_adj_ms,
                             uint8_t rst_spo2_pulse_n, double alpha,
                             uint8_t mean_filter_sz, uint16_t pulse_min_thresh,
                             uint16_t pulse_max_thresh, uint8_t bpm_sample_size,
-                            bool high_res_mode, bool debug) :
+                            bool debug) :
                             i2c(DEV_ADDR, i2c_num),
                             i2c_num(i2c_num),
                             acceptable_intensity_diff(acceptable_intensity_diff),
+                            red_current(start_red_current),
                             red_current_adj_ms(red_current_adj_ms),
                             rst_spo2_pulse_n(rst_spo2_pulse_n),
                             dc_alpha(alpha),
@@ -61,31 +61,9 @@ Max30100::Device::Device(i2c_port_t i2c_num, Mode mode,
                             pulse_bpm_sample_size(bpm_sample_size),
                             debug(debug),
                             current_pulse_state(PulseState::IDLE),
-                            red_current(start_red_current),
-                            last_red_current_check(0),
                             ir_current(ir_current),
-                            mtx_result()
+                            last_red_current_check(0)
 {
-
-    mtx_result = xSemaphoreCreateMutex();
-
-    try {
-        mean_diff_ir.values.reset(new double[mean_filter_size]);
-        values_bpm.reset(new double[mean_filter_size]);
-    } catch(const std::bad_alloc& ex){
-        throw ex;
-    }
-
-    try {
-        set_mode(mode);
-        set_sampling_rate(sampling_rate);
-        set_pulse_width(pulse_width);
-        set_led_current(red_current, ir_current);
-        set_high_res(high_res_mode);
-    } catch(const I2CExcept::CommandFailed& ex){
-        throw ex;
-    }
-
     dc_filter_ir.w = 0;
     dc_filter_ir.result = 0;
 
@@ -111,6 +89,28 @@ Max30100::Device::Device(i2c_port_t i2c_num, Mode mode,
     current_spO2 = 0;
 
     last_beat_thresh = 0;
+}
+
+void Max30100::Device::init(Mode mode, SamplingRate sampling_rate, PulseWidth pulse_width, bool high_res_mode)
+{
+    mtx_result = xSemaphoreCreateMutex();
+
+    try {
+        mean_diff_ir.values.reset(new double[mean_filter_size]);
+        values_bpm.reset(new double[mean_filter_size]);
+    } catch(const std::bad_alloc& ex){
+        throw ex;
+    }
+
+    try {
+        set_mode(mode);
+        set_sampling_rate(sampling_rate);
+        set_pulse_width(pulse_width);
+        set_led_current(red_current, ir_current);
+        set_high_res(high_res_mode);
+    } catch(const I2CExcept::CommandFailed& ex){
+        throw ex;
+    }
 }
 
 void Max30100::Device::set_mode(Mode mode)
@@ -200,7 +200,7 @@ void Max30100::Device::update()
                             log(sqrt(ir_ac_sq_sum / (double)samples_recorded));
 
         if(debug)
-            ESP_LOGD(TAG, "RMS Ratio: %d\n", ratio_rms);
+            ESP_LOGD(TAG, "RMS Ratio: %lf\n", ratio_rms);
 
         //This is my adjusted standard model, so it shows 0.89 as 94% saturation.
         //It is probably far from correct, requires proper empirical calibration.
@@ -424,6 +424,11 @@ double Max30100::Device::get_spo2()
     double spo2 = current_spO2;
     xSemaphoreGive(mtx_result);
     return spo2;
+}
+
+const char* Max30100::Device::get_tag()
+{
+    return TAG;
 }
 
 /**
