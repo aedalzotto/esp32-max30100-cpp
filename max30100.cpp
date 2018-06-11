@@ -1,3 +1,21 @@
+/**
+ * @file max30100.cpp
+ * 
+ * @author
+ * Angelo Elias Dalzotto (150633@upf.br)
+ * GEPID - Grupo de Pesquisa em Cultura Digital (http://gepid.upf.br/)
+ * Universidade de Passo Fundo (http://www.upf.br/)
+ * 
+ * @copyright
+ * Copyright (c) 2018 Angelo Elias Dalzotto & Gabriel Boni Vicari
+ * 
+ * @brief This library was created to interface the MAX30100 pulse and oxymeter
+ * sensor with ESP32 using the IDF-SDK. It includes functions to initialize with
+ * the programmer's desired parameters and to update the readings, detecting pulse
+ * and having the pulse saturation O2. It is based on Strogonovs Arduino library
+ * (https://morf.lv).
+ */
+
 #include "max30100.h"
 
 const uint8_t Max30100::Device::DEV_ADDR = 0x57;
