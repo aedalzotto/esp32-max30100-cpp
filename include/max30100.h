@@ -248,6 +248,13 @@ public:
      */
     const char* get_tag();
 
+    /**
+     * @brief Get the pulse detection status.
+     * 
+     * @return pulse_detected;
+     */
+    bool is_pulse_detected();
+
 private:
     /**
      * FIFO reading structure.
@@ -348,7 +355,7 @@ private:
     PulseState current_pulse_state;
 
     Current ir_current;
-    double last_red_current_check;
+    uint64_t last_red_current_check;
 
     struct MeanDiff mean_diff_ir;
     std::unique_ptr<double[]> values_bpm;
@@ -372,14 +379,6 @@ private:
     double current_spO2;
 
     bool pulse_detected;
-    double heart_bpm;
-    double ir_cardiogram;
-    double ir_dc_val;
-    double red_dc_val;
-    double spo2;
-    uint32_t last_beat_thresh;
-    double dc_filtered_red;
-    double dc_filtered_ir;
 
     static const uint8_t DEV_ADDR;
     static const uint8_t REV_ID;

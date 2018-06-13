@@ -87,28 +87,20 @@ Max30100::Device::Device(i2c_port_t i2c_num, Current ir_current,
     samples_recorded = 0;
     pulses_detected = 0;
     current_spO2 = 0;
-
-    last_beat_thresh = 0;
 }
 
 void Max30100::Device::init(Mode mode, SamplingRate sampling_rate, PulseWidth pulse_width, bool high_res_mode)
 {
-    mtx_result = xSemaphoreCreateMutex();
-
     try {
+        mtx_result = xSemaphoreCreateMutex();
         mean_diff_ir.values.reset(new double[mean_filter_size]);
         values_bpm.reset(new double[mean_filter_size]);
-    } catch(const std::bad_alloc& ex){
-        throw ex;
-    }
-
-    try {
         set_mode(mode);
         set_sampling_rate(sampling_rate);
         set_pulse_width(pulse_width);
         set_led_current(red_current, ir_current);
         set_high_res(high_res_mode);
-    } catch(const I2CExcept::CommandFailed& ex){
+    } catch(const std::bad_alloc& ex){
         throw ex;
     }
 }
@@ -163,15 +155,6 @@ void Max30100::Device::set_high_res(bool high_res)
 
 void Max30100::Device::update()
 {
-    pulse_detected = false;
-    heart_bpm = 0.0;
-    ir_cardiogram = 0.0;
-    ir_dc_val = 0.0;
-    red_dc_val = 0.0;
-    last_beat_thresh = 0;
-    dc_filtered_ir = 0.0;
-    dc_filtered_red = 0.0;
-
     Fifo raw_data;
     
     try {
@@ -186,14 +169,16 @@ void Max30100::Device::update()
     dc_filter_ir = dc_removal((double)raw_data.raw_ir, dc_filter_ir.w, dc_alpha);
     dc_filter_red = dc_removal((double)raw_data.raw_red, dc_filter_red.w, dc_alpha);
 
-    lpb_filter(mean_diff(dc_filter_ir.result) /*-dc_filter_ir.result*/);
+    lpb_filter(mean_diff(dc_filter_ir.result)/*-dc_filter_ir.result*/);
 
     ir_ac_sq_sum += dc_filter_ir.result * dc_filter_ir.result;
     red_ac_sq_sum += dc_filter_red.result * dc_filter_red.result;
     samples_recorded++;
 
     if(detect_pulse(lpb_filter_ir.result) && samples_recorded){
+        xSemaphoreTake(mtx_result, portMAX_DELAY);
         pulse_detected = true;
+        xSemaphoreGive(mtx_result);
         pulses_detected++;
 
         double ratio_rms = log(sqrt(red_ac_sq_sum / (double)samples_recorded)) /
@@ -214,6 +199,8 @@ void Max30100::Device::update()
             samples_recorded = 0;
         }
     }
+
+    balance_intensities(dc_filter_red.w, dc_filter_ir.w);
 }
 
 struct Max30100::Device::Filter Max30100::Device::dc_removal(double x, double prev_w, double alpha)
@@ -273,7 +260,6 @@ bool Max30100::Device::detect_pulse(double sensor_value)
         last_beat = 0;
         current_beat = 0;
         values_went_down = 0;
-        last_beat_thresh = 0;
         return false;
     }
 
@@ -287,7 +273,6 @@ bool Max30100::Device::detect_pulse(double sensor_value)
     case PulseState::TRACE_UP:
         if(sensor_value > prev_sensor_value) {
             current_beat = (uint32_t)(xTaskGetTickCount() * portTICK_PERIOD_MS);
-            last_beat_thresh = sensor_value;
         } else {
             if(debug) {
                 printf("Peak reached: %f %f\n",
@@ -357,6 +342,24 @@ bool Max30100::Device::detect_pulse(double sensor_value)
 
     prev_sensor_value = sensor_value;
     return false;
+}
+
+void Max30100::Device::balance_intensities(double red_dc, double ir_dc)
+{
+    if(xTaskGetTickCount()*portTICK_PERIOD_MS-last_red_current_check >= red_current_adj_ms){
+        if(ir_dc - red_dc > acceptable_intensity_diff && red_current != Current::CURRENT_50MA){
+            red_current = static_cast<Max30100::Current>((uint8_t)red_current+1);
+            set_led_current(red_current, ir_current);
+            if(debug)
+                ESP_LOGD(TAG, "Red LED Current+");
+        } else if(red_dc - ir_dc > acceptable_intensity_diff && (uint8_t)red_current > 0){
+            red_current = static_cast<Max30100::Current>((uint8_t)red_current-1);
+            set_led_current(red_current, ir_current);
+            if(debug)
+                ESP_LOGD(TAG, "Red LED Current-");
+        }
+    }
+    last_red_current_check = xTaskGetTickCount()*portTICK_PERIOD_MS;
 }
 
 double Max30100::Device::read_temperature()
@@ -429,6 +432,15 @@ double Max30100::Device::get_spo2()
 const char* Max30100::Device::get_tag()
 {
     return TAG;
+}
+
+bool Max30100::Device::is_pulse_detected()
+{
+    xSemaphoreTake(mtx_result, portMAX_DELAY);
+    bool detected = pulse_detected;
+    pulse_detected = false;
+    xSemaphoreGive(mtx_result);
+    return detected;
 }
 
 /**
